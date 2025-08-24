@@ -32,6 +32,9 @@ from modeling.qwen2.modeling_qwen2 import (
 )
 
 from modeling.qwen2.configuration_qwen2 import Qwen2Config as _Qwen2Config
+from modeling.cache_utils.taylorseer import (
+    cal_type, taylor_cache_init, derivative_approximation, taylor_formula,
+)
 
 
 torch._dynamo.config.cache_size_limit = 512
@@ -766,50 +769,65 @@ class Qwen2MoTDecoderLayer(nn.Module):
         packed_vae_token_indexes=None,
         packed_text_indexes=None,
     ) -> BaseNavitOutputWithPast:
+        
+        enable_taylorseer = getattr(self, 'enable_taylorseer', False)
 
-        residual = packed_query_sequence
-        if mode == "und":
-            packed_query_sequence = self.input_layernorm(packed_query_sequence)
-        elif mode == "gen":
-            packed_query_sequence_ = torch.zeros_like(packed_query_sequence)
-            packed_query_sequence_[packed_text_indexes] = self.input_layernorm(packed_query_sequence[packed_text_indexes])
-            packed_query_sequence_[packed_vae_token_indexes] = self.input_layernorm_moe_gen(packed_query_sequence[packed_vae_token_indexes])
-            packed_query_sequence = packed_query_sequence_
+        if enable_taylorseer and self.current['type'] == 'full':
+            self.current['module'] = 'total'
+            taylor_cache_init(cache_dic=self.cache_dic, current=self.current)
 
-        # Self Attention
-        packed_query_sequence, past_key_values = self.self_attn(
-            packed_query_sequence=packed_query_sequence,
-            query_lens=query_lens,
-            packed_query_position_embeddings=packed_query_position_embeddings,
-            packed_query_indexes=packed_query_indexes,
-            past_key_values=past_key_values,
-            key_values_lens=key_values_lens,
-            packed_key_value_indexes=packed_key_value_indexes,
-            update_past_key_values=update_past_key_values,
-            is_causal=is_causal,
-            mode=mode,
-            packed_vae_token_indexes=packed_vae_token_indexes,
-            packed_text_indexes=packed_text_indexes,
-        )
-        packed_query_sequence = residual + packed_query_sequence
+        if not enable_taylorseer or (enable_taylorseer and self.current['type'] == 'full'):
+            residual = packed_query_sequence
+            if mode == "und":
+                packed_query_sequence = self.input_layernorm(packed_query_sequence)
+            elif mode == "gen":
+                packed_query_sequence_ = torch.zeros_like(packed_query_sequence)
+                packed_query_sequence_[packed_text_indexes] = self.input_layernorm(packed_query_sequence[packed_text_indexes])
+                packed_query_sequence_[packed_vae_token_indexes] = self.input_layernorm_moe_gen(packed_query_sequence[packed_vae_token_indexes])
+                packed_query_sequence = packed_query_sequence_
 
-        # Fully Connected
-        residual = packed_query_sequence
-        if mode == "und":
-            packed_query_sequence = self.post_attention_layernorm(packed_query_sequence)
-            packed_query_sequence = self.mlp(packed_query_sequence)
-        elif mode == "gen":
-            packed_text_query_sequence = packed_query_sequence[packed_text_indexes]
-            packed_vae_query_sequence = packed_query_sequence[packed_vae_token_indexes]
-            packed_text_query_sequence = self.post_attention_layernorm(packed_text_query_sequence).to(torch.bfloat16)
-            packed_vae_query_sequence = self.post_attention_layernorm_moe_gen(packed_vae_query_sequence).to(torch.bfloat16)
+            # Self Attention
+            packed_query_sequence, past_key_values = self.self_attn(
+                packed_query_sequence=packed_query_sequence,
+                query_lens=query_lens,
+                packed_query_position_embeddings=packed_query_position_embeddings,
+                packed_query_indexes=packed_query_indexes,
+                past_key_values=past_key_values,
+                key_values_lens=key_values_lens,
+                packed_key_value_indexes=packed_key_value_indexes,
+                update_past_key_values=update_past_key_values,
+                is_causal=is_causal,
+                mode=mode,
+                packed_vae_token_indexes=packed_vae_token_indexes,
+                packed_text_indexes=packed_text_indexes,
+            )
+            packed_query_sequence = residual + packed_query_sequence
 
-            packed_query_sequence_ = torch.zeros_like(packed_query_sequence).to(torch.bfloat16)
-            packed_query_sequence_[packed_text_indexes] = self.mlp(packed_text_query_sequence)
-            packed_query_sequence_[packed_vae_token_indexes] = self.mlp_moe_gen(packed_vae_query_sequence)
-            packed_query_sequence = packed_query_sequence_
+            # Fully Connected
+            residual = packed_query_sequence
+            if mode == "und":
+                packed_query_sequence = self.post_attention_layernorm(packed_query_sequence)
+                packed_query_sequence = self.mlp(packed_query_sequence)
+            elif mode == "gen":
+                packed_text_query_sequence = packed_query_sequence[packed_text_indexes]
+                packed_vae_query_sequence = packed_query_sequence[packed_vae_token_indexes]
+                packed_text_query_sequence = self.post_attention_layernorm(packed_text_query_sequence).to(torch.bfloat16)
+                packed_vae_query_sequence = self.post_attention_layernorm_moe_gen(packed_vae_query_sequence).to(torch.bfloat16)
 
-        packed_query_sequence = residual + packed_query_sequence
+                packed_query_sequence_ = torch.zeros_like(packed_query_sequence).to(torch.bfloat16)
+                packed_query_sequence_[packed_text_indexes] = self.mlp(packed_text_query_sequence)
+                packed_query_sequence_[packed_vae_token_indexes] = self.mlp_moe_gen(packed_vae_query_sequence)
+                packed_query_sequence = packed_query_sequence_
+
+            packed_query_sequence = residual + packed_query_sequence
+        
+        if enable_taylorseer:
+            if self.current['type'] == 'full':
+                derivative_approximation(cache_dic=self.cache_dic, current=self.current, feature=packed_query_sequence)
+            elif self.current['type'] == 'Taylor':
+                self.current['module'] = 'total'
+                packed_query_sequence = taylor_formula(cache_dic=self.cache_dic, current=self.current)
+
         return packed_query_sequence, past_key_values
 
 
@@ -1012,6 +1030,11 @@ class Qwen2Model(Qwen2PreTrainedModel):
         packed_vae_token_indexes=None,
         packed_text_indexes=None,
     ) -> BaseNavitOutputWithPast:
+        
+        enable_taylorseer = getattr(self, 'enable_taylorseer', False)
+        if enable_taylorseer:
+            cal_type(self.cache_dic, self.current)
+            self.current['stream'] = 'layers_stream'
 
         # create position embeddings to be shared across the decoder layers
         cos, sin = self.rotary_emb(packed_query_sequence, packed_query_position_ids.unsqueeze(0))
@@ -1030,7 +1053,12 @@ class Qwen2Model(Qwen2PreTrainedModel):
                     packed_text_indexes=packed_text_indexes,
                 )
 
-        for decoder_layer in self.layers:
+        for layer_idx, decoder_layer in enumerate(self.layers):
+            if enable_taylorseer:
+                decoder_layer.current = self.current
+                decoder_layer.cache_dic = self.cache_dic
+                decoder_layer.enable_taylorseer = True
+                self.current['layer'] = layer_idx
             packed_query_sequence, past_key_values = decoder_layer(
                 packed_query_sequence=packed_query_sequence,
                 query_lens=query_lens,
@@ -1054,6 +1082,9 @@ class Qwen2Model(Qwen2PreTrainedModel):
                 packed_query_sequence = packed_query_sequence_
         else:
             packed_query_sequence = self.norm(packed_query_sequence)
+        
+        if enable_taylorseer:
+            self.current['step'] += 1
 
         return BaseNavitOutputWithPast(
             packed_query_sequence=packed_query_sequence,

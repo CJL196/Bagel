@@ -110,7 +110,8 @@ class InterleaveInferencer:
         cfg_renorm_type="global",
         
         num_timesteps=50, 
-        timestep_shift=3.0
+        timestep_shift=3.0,
+        enable_taylorseer=False,
     ):
         # print(cfg_renorm_type)
         past_key_values = gen_context['past_key_values']
@@ -163,6 +164,7 @@ class InterleaveInferencer:
             cfg_img_packed_query_indexes=generation_input_cfg_img['cfg_packed_query_indexes'],
             cfg_img_key_values_lens=generation_input_cfg_img['cfg_key_values_lens'],
             cfg_img_packed_key_value_indexes=generation_input_cfg_img['cfg_packed_key_value_indexes'],
+            enable_taylorseer=enable_taylorseer,
         )
 
         image = self.decode_image(unpacked_latent[0], image_shape)
@@ -220,6 +222,7 @@ class InterleaveInferencer:
         cfg_renorm_min=0.0,
         cfg_renorm_type="global",
         image_shapes=(1024, 1024),
+        enable_taylorseer=False,
     ) -> List[Union[str, Image.Image]]:
 
         output_list = []
@@ -275,6 +278,7 @@ class InterleaveInferencer:
                     num_timesteps=num_timesteps,
                     cfg_renorm_min=cfg_renorm_min,
                     cfg_renorm_type=cfg_renorm_type,
+                    enable_taylorseer=enable_taylorseer,
                 )
 
                 output_list.append(img)

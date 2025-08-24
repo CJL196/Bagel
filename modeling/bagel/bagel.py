@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import copy
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 
 import torch
 import torch.nn.functional as F
@@ -19,6 +19,7 @@ from data.data_utils import (
 )
 from .qwen2_navit import NaiveCache
 from .modeling_utils import MLPconnector, TimestepEmbedder, PositionEmbedding
+from modeling.cache_utils.taylorseer import cache_init
 
 from tqdm import tqdm
 
@@ -673,7 +674,20 @@ class Bagel(PreTrainedModel):
         cfg_img_key_values_lens: Optional[torch.IntTensor] = None,
         cfg_img_packed_key_value_indexes: Optional[torch.LongTensor] = None,
         cfg_type: str = "parallel",
+        # cache_args
+        enable_taylorseer=False,
     ):
+        if enable_taylorseer:
+            self.language_model.model.enable_taylorseer = True
+            model_pred_cache_dic, model_pred_current = cache_init(self, num_timesteps)
+            model_pred_text_cache_dic, model_pred_text_current = cache_init(self, num_timesteps)
+            model_pred_img_cache_dic, model_pred_img_current = cache_init(self, num_timesteps)
+        else:
+            self.language_model.model.enable_taylorseer = False
+            model_pred_cache_dic, model_pred_current = None, None
+            model_pred_text_cache_dic, model_pred_text_current = None, None
+            model_pred_img_cache_dic, model_pred_img_current = None, None
+    
         x_t = packed_init_noises
 
         timesteps = torch.linspace(1, 0, num_timesteps, device=x_t.device)
@@ -720,9 +734,21 @@ class Bagel(PreTrainedModel):
                 cfg_img_past_key_values=cfg_img_past_key_values,
                 cfg_img_packed_key_value_indexes=cfg_img_packed_key_value_indexes,
                 cfg_type=cfg_type,
+                # cache
+                model_pred_cache_dic=model_pred_cache_dic,
+                model_pred_current=model_pred_current,
+                model_pred_text_cache_dic=model_pred_text_cache_dic,
+                model_pred_text_current=model_pred_text_current,
+                model_pred_img_cache_dic=model_pred_img_cache_dic,
+                model_pred_img_current=model_pred_img_current,
             )
 
             x_t = x_t - v_t.to(x_t.device) * dts[i] # velocity pointing from data to noise
+        
+        if enable_taylorseer:
+            del model_pred_cache_dic, model_pred_current
+            del model_pred_text_cache_dic, model_pred_text_current
+            del model_pred_img_cache_dic, model_pred_img_current
 
         unpacked_latent = x_t.split((packed_seqlens - 2).tolist())
         return unpacked_latent
@@ -759,6 +785,13 @@ class Bagel(PreTrainedModel):
         cfg_img_past_key_values: Optional[NaiveCache] = None,
         cfg_img_packed_key_value_indexes: Optional[torch.LongTensor] = None,
         cfg_type: str = "parallel",
+        # cache
+        model_pred_cache_dic: Optional[Dict[str, Any]] = None,
+        model_pred_current: Optional[int] = None,
+        model_pred_text_cache_dic: Optional[Dict[str, Any]] = None,
+        model_pred_text_current: Optional[int] = None,
+        model_pred_img_cache_dic: Optional[Dict[str, Any]] = None,
+        model_pred_img_current: Optional[int] = None,
     ):
         packed_text_embedding = self.language_model.model.embed_tokens(packed_text_ids)
         packed_sequence = packed_text_embedding.new_zeros((sum(packed_seqlens), self.hidden_size))
@@ -779,6 +812,10 @@ class Bagel(PreTrainedModel):
                 "packed_vae_token_indexes": packed_vae_token_indexes,
                 "packed_text_indexes": packed_text_indexes
             }
+        
+        if self.language_model.model.enable_taylorseer:
+            self.language_model.model.cache_dic = model_pred_cache_dic
+            self.language_model.model.current = model_pred_current
 
         output = self.language_model.forward_inference(
             packed_query_sequence=packed_sequence,
@@ -796,6 +833,9 @@ class Bagel(PreTrainedModel):
         v_t = v_t[packed_vae_token_indexes]
 
         if cfg_text_scale > 1.0:
+            if self.language_model.model.enable_taylorseer:
+                self.language_model.model.cache_dic = model_pred_text_cache_dic
+                self.language_model.model.current = model_pred_text_current
             cfg_text_output = self.language_model.forward_inference(
                 packed_query_sequence=packed_sequence,
                 query_lens=packed_seqlens,
@@ -812,6 +852,9 @@ class Bagel(PreTrainedModel):
             cfg_text_v_t = cfg_text_v_t[packed_vae_token_indexes]
 
         if cfg_img_scale > 1.0:
+            if self.language_model.model.enable_taylorseer:
+                self.language_model.model.cache_dic = model_pred_img_cache_dic
+                self.language_model.model.current = model_pred_img_current
             cfg_img_output = self.language_model.forward_inference(
                 packed_query_sequence=packed_sequence,
                 query_lens=packed_seqlens,
