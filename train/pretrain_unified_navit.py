@@ -341,7 +341,7 @@ class TrainingArguments:
 
 def main():
     assert torch.cuda.is_available()
-    dist.init_process_group("nccl")
+    dist.init_process_group("nccl", device_id=torch.device("cuda:0"))
     device = dist.get_rank() % torch.cuda.device_count()
     torch.cuda.set_device(device)
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
@@ -359,9 +359,9 @@ def main():
             resume=training_args.wandb_resume,
             mode="offline" if training_args.wandb_offline else "online"
         )
-        wandb.config.update(training_args)
-        wandb.config.update(model_args)
-        wandb.config.update(data_args)
+        wandb.config.update(training_args, allow_val_change=True)
+        wandb.config.update(model_args, allow_val_change=True)
+        wandb.config.update(data_args, allow_val_change=True)
     else:
         logger = create_logger(None, dist.get_rank())
     dist.barrier()
