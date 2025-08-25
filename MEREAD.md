@@ -38,34 +38,12 @@ bagel_example/
     └── llava_ov_si.jsonl          # 对话数据
 ```
 
-### 2.3 配置数据路径
-编辑 `data/dataset_info.py` 文件，更新所有 `your_data_path` 占位符为实际数据路径：
+### 2.3 数据集
 
-```python
-DATASET_INFO = {
-    't2i_pretrain': {
-        't2i': {
-            'data_dir': '/data/bagel_example/t2i',  # 更新为实际路径
-            'num_files': 10,
-            'num_total_samples': 1000,
-        },
-    },
-    'unified_edit': {
-        'seedxedit_multi': {
-            'data_dir': '/data/bagel_example/editing/seedxedit_multi',  # 更新路径
-            'num_files': 10,
-            'num_total_samples': 1000,
-            "parquet_info_path": '/data/bagel_example/editing/parquet_info/seedxedit_multi_nas.json',
-        },
-    },
-    'vlm_sft': {
-        'llava_ov': {
-            'data_dir': '/data/bagel_example/vlm/images',  # 更新路径
-            'jsonl_path': '/data/bagel_example/vlm/llava_ov_si.jsonl',
-            'num_total_samples': 1000
-        },
-    },
-}
+`dataset/bagel_example/editing/parquet_info/seedxedit_multi.json` 修改为：
+
+```json
+{"dataset/bagel_example/editing/seedxedit_multi/chunk_0.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_1.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_2.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_3.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_4.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_5.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_6.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_7.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_8.parquet": {"num_row_groups": 10, "num_rows": 100}, "dataset/bagel_example/editing/seedxedit_multi/chunk_9.parquet": {"num_row_groups": 10, "num_rows": 100}}
 ```
 
 ### 2.4 检查数据配置
