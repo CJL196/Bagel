@@ -339,6 +339,8 @@ def main():
     dist.init_process_group("nccl")
     device = dist.get_rank() % torch.cuda.device_count()
     torch.cuda.set_device(device)
+    print(f"Rank {dist.get_rank()}: 使用设备 {device}, CUDA设备数量: {torch.cuda.device_count()}")
+    print("World size:", dist.get_world_size())
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
@@ -359,7 +361,10 @@ def main():
         wandb.config.update(data_args, allow_val_change=True)
     else:
         logger = create_logger(None, dist.get_rank())
-    dist.barrier()
+    # print("before barrier")
+    # # 明确指定设备进行 barrier
+    # dist.barrier()
+    # print("after barrier")
     logger.info(f'Training arguments {training_args}')
     logger.info(f'Model arguments {model_args}')
     logger.info(f'Data arguments {data_args}')

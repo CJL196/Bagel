@@ -153,10 +153,10 @@ class FSDPCheckpoint:
     def try_load_ckpt(resume_from, logger, model, ema_model=None, resume_from_ema=False):
         if resume_from is not None and os.path.exists(resume_from):
             logger.info(f"Loading checkpoint from {resume_from}.")
-            if resume_from_ema:
-                model_state_dict_path = os.path.join(resume_from, f"ema.safetensors")
-            else:
-                model_state_dict_path = os.path.join(resume_from, f"model.safetensors")
+            # if resume_from_ema:
+            model_state_dict_path = os.path.join(resume_from, f"ema.safetensors")
+            # else:
+            #     model_state_dict_path = os.path.join(resume_from, f"model.safetensors")
             model_state_dict = load_file(model_state_dict_path, device="cpu")
             # NOTE position embeds are fixed sinusoidal embeddings, so we can just pop it off,
             # which makes it easier to adapt to different resolutions.
