@@ -33,7 +33,6 @@ from modeling.qwen2 import Qwen2Tokenizer
 from train.train_utils import create_logger, get_latest_ckpt
 from train.fsdp_utils import (
     FSDPCheckpoint, FSDPConfig, grad_checkpoint_check_fn, fsdp_wrapper, 
-    fsdp_ema_setup, fsdp_ema_update,
 )
 
 
@@ -261,10 +260,6 @@ class TrainingArguments:
         default=1e-15,
         metadata={"help": "AdamW ε for numerical stability."}
     )
-    ema: float = field(
-        default=0.9999,
-        metadata={"help": "Decay rate for the exponential moving average of model weights."}
-    )
     max_grad_norm: int = field(
         default=1.0,
         metadata={"help": "Gradient clipping threshold (L2 norm)."}
@@ -479,11 +474,9 @@ def main():
         num_replicate=training_args.num_replicate,
         num_shard=training_args.num_shard,
     )
-    ema_model = deepcopy(model)
-    model, ema_model = FSDPCheckpoint.try_load_ckpt(
-        resume_from, logger, model, ema_model, resume_from_ema=finetune_from_ema
+    model, _ = FSDPCheckpoint.try_load_ckpt(
+        resume_from, logger, model, None, resume_from_ema=False
     )
-    ema_model = fsdp_ema_setup(ema_model, fsdp_config)
     fsdp_model = fsdp_wrapper(model, fsdp_config)
     apply_activation_checkpointing(
         fsdp_model, 
@@ -574,7 +567,7 @@ def main():
     if training_args.visual_gen:
         vae_model.to(device).eval()
     fsdp_model.train()
-    ema_model.eval()
+    # ema_model.eval() # Removed EMA model
 
     # train loop
     start_time = time()
@@ -625,7 +618,7 @@ def main():
         total_norm = fsdp_model.clip_grad_norm_(training_args.max_grad_norm)
         optimizer.step()
         scheduler.step()
-        fsdp_ema_update(ema_model, fsdp_model, decay=training_args.ema)
+        # fsdp_ema_update(ema_model, fsdp_model, decay=training_args.ema) # Removed EMA update
 
         # Log loss values:
         if curr_step % training_args.log_every == 0:
@@ -683,7 +676,7 @@ def main():
                 ckpt_dir=training_args.checkpoint_dir, 
                 train_steps=curr_step, 
                 model=fsdp_model, 
-                ema_model=ema_model, 
+                ema_model=None,  # 传入None而不是ema_model
                 optimizer=optimizer, 
                 scheduler=scheduler, 
                 logger=logger,
