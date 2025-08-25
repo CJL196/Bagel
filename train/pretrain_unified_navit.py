@@ -336,7 +336,7 @@ class TrainingArguments:
 
 def main():
     assert torch.cuda.is_available()
-    dist.init_process_group("nccl", device_id=torch.device("cuda:0"))
+    dist.init_process_group("nccl")
     device = dist.get_rank() % torch.cuda.device_count()
     torch.cuda.set_device(device)
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
