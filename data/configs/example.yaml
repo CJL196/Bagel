@@ -7,7 +7,7 @@ t2i_pretrain:
     min_image_size: 512
   is_mandatory: true
   num_used_data: # The sum should be larger that NUM_GPUS x NUM_WORKERS
-  - 10
+  - 12  # 增加到12，确保每个worker都有数据
   weight: 1
 
 unified_edit:
@@ -23,7 +23,7 @@ unified_edit:
     min_image_size: 224
   is_mandatory: false
   num_used_data:
-  - 10
+  - 12  # 增加到12，确保每个worker都有数据
   weight: 1
 
 vlm_sft:

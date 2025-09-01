@@ -361,10 +361,10 @@ def main():
         wandb.config.update(data_args, allow_val_change=True)
     else:
         logger = create_logger(None, dist.get_rank())
-    # print("before barrier")
-    # # 明确指定设备进行 barrier
-    # dist.barrier()
-    # print("after barrier")
+    print("before barrier")
+    # 明确指定设备进行 barrier
+    dist.barrier()
+    print("after barrier")
     logger.info(f'Training arguments {training_args}')
     logger.info(f'Model arguments {model_args}')
     logger.info(f'Data arguments {data_args}')
@@ -585,13 +585,16 @@ def main():
             if training_args.visual_gen:
                 with torch.no_grad():
                     data['padded_latent'] = vae_model.encode(data.pop('padded_images'))
+            print("before fsdp_model, rank = ", dist.get_rank())
             loss_dict = fsdp_model(**data)
-
+        print('after fsdp_model, rank = ', dist.get_rank())
         loss = 0
         ce = loss_dict["ce"]
         if ce is not None:
             total_ce_tokens = torch.tensor(len(data['ce_loss_indexes']), device=device)
+            print(f"before all_reduce, rank = {dist.get_rank()}")
             dist.all_reduce(total_ce_tokens, op=dist.ReduceOp.SUM)
+            print(f"after all_reduce, rank = {dist.get_rank()}")
             if training_args.ce_loss_reweighting:
                 ce = ce * ce_loss_weights
                 total_ce_loss_weights = ce_loss_weights.sum()

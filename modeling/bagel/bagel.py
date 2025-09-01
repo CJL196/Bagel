@@ -148,10 +148,11 @@ class Bagel(PreTrainedModel):
             packed_timesteps: 1-D float tensor, flow timesteps. 0 indicates use clean image.
             mse_loss_indexes: 1-D bool tensor, where to compute mse loss.
         """
+        print("forward#1, rank", torch.distributed.get_rank())
         packed_text_embedding = self.language_model.model.embed_tokens(packed_text_ids)
         packed_sequence = packed_text_embedding.new_zeros(size=(sequence_length, self.hidden_size))
         packed_sequence[packed_text_indexes] = packed_text_embedding
-
+        print("forward#1.1, rank", torch.distributed.get_rank())
         if nested_attention_masks is None:
             sparse_mask = create_sparse_mask(sample_lens, split_lens, attn_modes, packed_text_embedding.device)
             seqlen = sum(sample_lens)
@@ -162,22 +163,27 @@ class Bagel(PreTrainedModel):
             attention_mask = block_mask
         else:
             attention_mask = nested_attention_masks
-
+        print("forward#1.2, rank", torch.distributed.get_rank())
         if self.config.visual_und:
             cu_seqlens = torch.nn.functional.pad(torch.cumsum(vit_token_seqlens, dim=0), (1, 0))
             cu_seqlens = cu_seqlens.to(torch.int32)
             max_seqlen = torch.max(vit_token_seqlens).item()
+            print("forward#1.3, rank", torch.distributed.get_rank())
             packed_vit_token_embed = self.vit_model(
                 packed_pixel_values=packed_vit_tokens, 
                 packed_flattened_position_ids=packed_vit_position_ids,
                 cu_seqlens=cu_seqlens,
                 max_seqlen=max_seqlen,
             )
+            print("forward#1.4, rank", torch.distributed.get_rank())
             packed_vit_token_embed = self.connector(packed_vit_token_embed)
+            print("forward#1.5, rank", torch.distributed.get_rank())
             vit_token_pos_emb = self.vit_pos_embed(packed_vit_position_ids)
+            print("forward#1.6, rank", torch.distributed.get_rank())
             packed_vit_token_embed = packed_vit_token_embed + vit_token_pos_emb
             packed_sequence[packed_vit_token_indexes] = packed_vit_token_embed
-
+            print("forward#1.7, rank", torch.distributed.get_rank())
+        print("forward#2, rank", torch.distributed.get_rank())
         if self.config.visual_gen:
             p = self.latent_patch_size
             packed_latent = []
@@ -205,7 +211,7 @@ class Bagel(PreTrainedModel):
                 packed_und_token_indexes=packed_und_token_indexes,
                 packed_gen_token_indexes=packed_vae_token_indexes,
             )
-
+        print("forward#3, rank", torch.distributed.get_rank())
         last_hidden_state = self.language_model(
             packed_sequence=packed_sequence,
             sample_lens=sample_lens,
@@ -213,7 +219,7 @@ class Bagel(PreTrainedModel):
             packed_position_ids=packed_position_ids,
             **extra_inputs,
         )
-
+        print("forward#4, rank", torch.distributed.get_rank())
         mse = None
         if self.config.visual_gen:
             packed_mse_preds = self.llm2vae(last_hidden_state[mse_loss_indexes])
@@ -225,7 +231,7 @@ class Bagel(PreTrainedModel):
         if ce_loss_indexes is not None:
             packed_ce_preds = self.language_model.lm_head(last_hidden_state[ce_loss_indexes])
             ce = F.cross_entropy(packed_ce_preds, packed_label_ids, reduction="none")
-
+        print("forward#5, rank", torch.distributed.get_rank())
         return dict(mse=mse, ce=ce)
 
 
